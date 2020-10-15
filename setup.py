@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 from distutils.core import setup
-import re
 
 long_description = """
 A Pure-Python library built as a PDF toolkit.  It is capable of:
@@ -20,18 +19,9 @@ objects rather than file streams, allowing for PDF manipulation in memory.
 It is therefore a useful tool for websites that manage or manipulate PDFs.
 """
 
-VERSIONFILE="PyPDF2/_version.py"
-verstrline = open(VERSIONFILE, "rt").read()
-VSRE = r"^__version__ = ['\"]([^'\"]*)['\"]"
-mo = re.search(VSRE, verstrline, re.M)
-if mo:
-    verstr = mo.group(1)
-else:
-    raise RuntimeError("Unable to find version string in %s." % (VERSIONFILE))
-
 setup(
         name="PyPDF2",
-        version=verstr,
+        version="1.26.0.4",
         description="PDF toolkit",
         long_description=long_description,
         author="Mathieu Fenniak",
