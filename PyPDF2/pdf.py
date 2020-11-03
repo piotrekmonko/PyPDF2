@@ -1127,7 +1127,7 @@ class PdfFileReader(object):
         ``warnings.py`` module with a custom implementation (defaults to
         ``True``).
     """
-    def __init__(self, stream, strict=True, warndest = None, overwriteWarnings = True):
+    def __init__(self, stream, strict=False, warndest=None, overwriteWarnings=True):
         if overwriteWarnings:
             # have to dynamically override the default showwarning since there are no
             # public methods that specify the 'file' parameter
@@ -1216,7 +1216,7 @@ class PdfFileReader(object):
                 self.decrypt('')
                 return self.trailer["/Root"]["/Pages"]["/Count"]
             except:
-                raise utils.PdfReadError("File has not been decrypted")
+                raise utils.PdfEncryptedError("File has not been decrypted")
             finally:
                 self._override_encryption = False
         else:
@@ -1683,7 +1683,7 @@ class PdfFileReader(object):
             if not self._override_encryption and self.isEncrypted:
                 # if we don't have the encryption key:
                 if not hasattr(self, '_decryption_key'):
-                    raise utils.PdfReadError("file has not been decrypted")
+                    raise utils.PdfEncryptedError("file has not been decrypted")
                 # otherwise, decrypt here...
                 import struct
                 pack1 = struct.pack("<i", indirectReference.idnum)[:3]

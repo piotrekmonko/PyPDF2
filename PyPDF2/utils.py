@@ -210,6 +210,10 @@ class PdfReadError(PyPdfError):
     pass
 
 
+class PdfEncryptedError(PdfReadError):
+    pass
+
+
 class PageSizeNotDefinedError(PyPdfError):
     pass
 
