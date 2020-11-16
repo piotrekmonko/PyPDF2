@@ -1,4 +1,4 @@
-'''
+"""
     Helper module for permissions
 
 
@@ -34,7 +34,7 @@ BIT POSITION                    MEANING
 13-32	                        (Revision 3 only) Reserved; must be 1.
 
 Source: http://www.verypdf.com/encryptpdf/permissions.htm
-'''
+"""
 
 __BIT_POSITION_PRINT = 3
 __BIT_POSITION_MODIFY = 4
@@ -45,32 +45,47 @@ __BIT_POSITION_EXTRACT = 10
 __BIT_POSITION_ASSEMBLE = 11
 __BIT_POSITION_PRINT_HQ = 12
 
+
 def __get_bit_value_as_int(bit):
-    '''
-        Returns the in value of a bit
-    '''
+    """
+    Returns the in value of a bit
+    """
     return 2 ** (bit - 1)
 
+
 PERM_NONE = 0
-PERM_PRINT = __get_bit_value_as_int(__BIT_POSITION_PRINT) | __get_bit_value_as_int(__BIT_POSITION_PRINT_HQ)
+PERM_PRINT = __get_bit_value_as_int(__BIT_POSITION_PRINT) | __get_bit_value_as_int(
+    __BIT_POSITION_PRINT_HQ
+)
 PERM_MODIFY = __get_bit_value_as_int(__BIT_POSITION_MODIFY)
 PERM_MODIFY_TEXT = __get_bit_value_as_int(__BIT_POSITION_ANNOTATIONS)
 PERM_FILL_FIELDS = __get_bit_value_as_int(__BIT_POSITION_FILL_FIELDS)
 PERM_ASSEMBLE = __get_bit_value_as_int(__BIT_POSITION_ASSEMBLE)
-PERM_COPY = __get_bit_value_as_int(__BIT_POSITION_COPY) | __get_bit_value_as_int(__BIT_POSITION_EXTRACT)
-PERM_ALL = PERM_PRINT | PERM_MODIFY | PERM_MODIFY_TEXT | PERM_FILL_FIELDS | PERM_ASSEMBLE | PERM_COPY
+PERM_COPY = __get_bit_value_as_int(__BIT_POSITION_COPY) | __get_bit_value_as_int(
+    __BIT_POSITION_EXTRACT
+)
+PERM_ALL = (
+    PERM_PRINT
+    | PERM_MODIFY
+    | PERM_MODIFY_TEXT
+    | PERM_FILL_FIELDS
+    | PERM_ASSEMBLE
+    | PERM_COPY
+)
+
 
 def __twos_complement(val):
     bits = 32
     """compute the 2's complement of int value val"""
-    if (val & (1 << (bits - 1))) != 0: # if sign bit is set e.g., 8bit: 128-255
-        val = val - (1 << bits)        # compute negative value
-    return val                         # return positive value as is
+    if (val & (1 << (bits - 1))) != 0:  # if sign bit is set e.g., 8bit: 128-255
+        val = val - (1 << bits)  # compute negative value
+    return val  # return positive value as is
+
 
 def get_perm_value_as_int(perms):
-    '''
+    """
         Returns the twos complement representation of the permission
-    '''
+    """
     # Mask is 11111111111111111111000011000000
     # Bits 13-32 are 1 and bits 7-8 are 1
     mask = 0xFFFFF0C0
