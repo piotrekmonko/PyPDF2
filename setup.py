@@ -21,7 +21,7 @@ It is therefore a useful tool for websites that manage or manipulate PDFs.
 
 setup(
         name="PyPDF2",
-        version="1.26.0.4",
+        version="1.26.0.5",
         description="PDF toolkit",
         long_description=long_description,
         author="Mathieu Fenniak",

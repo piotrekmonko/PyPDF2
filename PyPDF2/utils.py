@@ -146,8 +146,9 @@ def readUntilRegex(stream, regex, ignore_eof=False):
     :param bool ignore_eof: If true, ignore end-of-line and return immediately
     """
     name = b_("")
+    word_size = len(regex.pattern)
     while True:
-        tok = stream.read(16)
+        tok = stream.read(2 * word_size)
         if not tok:
             # stream has truncated prematurely
             if ignore_eof == True:
@@ -156,10 +157,11 @@ def readUntilRegex(stream, regex, ignore_eof=False):
                 raise PdfStreamError("Stream has ended unexpectedly")
         m = regex.search(tok)
         if m is not None:
-            name += tok[: m.start()]
+            name += tok[:m.start()]
             stream.seek(m.start() - len(tok), 1)
             break
-        name += tok
+        name += tok[0:word_size]
+        stream.seek(len(tok[word_size:]) * -1, 1)
     return name
 
 
