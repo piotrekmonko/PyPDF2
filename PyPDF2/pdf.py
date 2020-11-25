@@ -64,7 +64,7 @@ from . import utils
 import warnings
 import codecs
 from .generic import *
-from .utils import readNonWhitespace, readUntilWhitespace, ConvertFunctionsToVirtualList
+from .utils import readNonWhitespace, readUntilWhitespace, ConvertFunctionsToVirtualList, PdfReadError
 from .utils import isString, b_, u_, ord_, chr_, str_, formatWarning
 from .perms import get_perm_value_as_int
 
@@ -629,7 +629,7 @@ class PdfFileWriter(object):
                         newobj = self._sweepIndirectReferences(externMap, newobj)
                         self._objects[idnum - 1] = newobj
                         return newobj_ido
-                    except ValueError:
+                    except (ValueError, PdfReadError):
                         # Unable to resolve the Object, returning NullObject instead.
                         warnings.warn(
                             "Unable to resolve [{}: {}], returning NullObject instead".format(
@@ -1243,13 +1243,65 @@ class PdfFileReader(object):
                 utils.PdfReadWarning,
             )
         if isString(stream):
-            fileobj = open(stream, "rb")
-            stream = BytesIO(b_(fileobj.read()))
-            fileobj.close()
+            with open(stream, "rb") as fileobj:
+                stream = BytesIO(b_(fileobj.read()))
+        stream = self.correct_leading_whitespace(stream)
         self.read(stream)
         self.stream = stream
 
         self._override_encryption = False
+
+    def _peek_bytes(self, num_bytes=124, pre_read=0, offset=None, stream=None):
+        """
+        Peek bytes, optionally at given offset and with given leading bytes. For debugging.
+
+        :param num_bytes: number of bytes to show
+        :type num_bytes: int
+        :param pre_read: show this number of bytes leading to current position, or offset position
+        :type pre_read: int
+        :param offset: show at this position, defaults to current file position if set to None
+        :type offset: int or None
+        :return: None
+        """
+        # self._peek_bytes(pre_read=10)
+        if stream is None:
+            stream = self.stream
+        pos = stream.tell()
+        if offset is not None:
+            stream.seek(offset)
+        stream.seek(pre_read * -1, 1)
+        value = stream.read(num_bytes)
+        length = stream.seek(0, 2)
+        new_lines = value[0:pre_read].count(b'\n')
+        stream.seek(pos)
+        prefix = f'[{pos}/{length}]'
+        print(prefix, value)
+        print(' ' * (len(prefix) + pre_read + new_lines), '--^--')
+
+    def correct_leading_whitespace(self, stream):
+        """
+        Strip leading bytes if stream starts with whitespace.
+        Returns original or a new stream. Sacrifices memory for speed.
+
+        :param stream: opened file stream
+        :type stream: file
+        :return: opened file stream, original or a near-copy
+        :rtype: file
+        """
+        pos = stream.tell()
+        stream.seek(0)
+
+        tok = stream.read(1)
+        while tok in utils.WHITESPACES:
+            tok = stream.read(1)
+            if tok not in utils.WHITESPACES:
+                pos = stream.seek(-1, 1)
+                new_stream = BytesIO(b_(stream.read()))
+                warnings.warn(f'Stripped {pos} leading bytes')
+                return new_stream
+
+        stream.seek(pos)
+        return stream
 
     def getDocumentInfo(self):
         """
@@ -1682,7 +1734,13 @@ class PdfFileReader(object):
             inherit = dict()
         if pages == None:
             self.flattenedPages = []
-            catalog = self.trailer["/Root"].getObject()
+            try:
+                trailer_root = self.trailer["/Root"]
+            except ValueError:
+                # invalid data at xref offset, scan file to build index without xref table
+                self.xref = self.build_xref_index(self.stream)
+                trailer_root = self.trailer["/Root"]
+            catalog = trailer_root.getObject()
             pages = catalog["/Pages"].getObject()
 
         t = "/Pages"
@@ -1854,8 +1912,8 @@ class PdfFileReader(object):
                 % (indirectReference.idnum, indirectReference.generation),
                 utils.PdfReadWarning,
             )
-            # if self.strict:
-            raise utils.PdfReadError("Could not find object.")
+            if self.strict:
+                raise utils.PdfReadError("Could not find object.")
         self.cacheIndirectObject(
             indirectReference.generation, indirectReference.idnum, retval
         )
@@ -1927,7 +1985,7 @@ class PdfFileReader(object):
         stream.seek(-1, 2)
         if not stream.tell():
             raise utils.PdfReadError("Cannot read an empty file")
-        last1K = stream.tell() - 1024 + 1  # offset of last 1024 bytes of stream
+        last1K = stream.tell() - 65535 + 1  # offset of last 65535 bytes of stream
         line = b_("")
         while line[:5] != b_("%%EOF"):
             if stream.tell() < last1K:
@@ -2036,7 +2094,7 @@ class PdfFileReader(object):
                 for key, value in list(newTrailer.items()):
                     if key not in self.trailer:
                         self.trailer[key] = value
-                if "/Prev" in newTrailer:
+                if newTrailer.get("/Prev", False):
                     startxref = newTrailer["/Prev"]
                 else:
                     break
@@ -2135,7 +2193,8 @@ class PdfFileReader(object):
                 # bad xref character at startxref.  Let's see if we can find
                 # the xref table nearby, as we've observed this error with an
                 # off-by-one before.
-                stream.seek(-11, 1)
+                current_offset = stream.tell()
+                stream.seek(max(-11, current_offset * -1), 1)
                 tmp = stream.read(20)
                 xref_loc = tmp.find(b_("xref"))
                 if xref_loc != -1:
@@ -2152,10 +2211,18 @@ class PdfFileReader(object):
                         break
                 if found:
                     continue
-                # no xref table found at specified location
-                raise utils.PdfReadError(
-                    "Could not find xref table at specified location"
-                )
+                # no xref table found at specified location, scan whole stream
+                offset = self.scan_stream_for_xref(stream)
+                if offset:
+                    startxref = offset
+                    continue
+                # no xref table found in entire stream, build document index manually
+                self.xref = self.build_xref_index(stream)
+                if not self.xref:
+                    raise utils.PdfReadError(
+                        "Could not find xref table at specified location"
+                    )
+                break
         # if not zero-indexed, verify that the table is correct; change it if necessary
         if self.xrefIndex and not self.strict:
             loc = stream.tell()
@@ -2173,6 +2240,64 @@ class PdfFileReader(object):
                         break
                     # if not, then either it's just plain wrong, or the non-zero-index is actually correct
             stream.seek(loc, 0)  # return to where it was
+
+    def scan_stream_for_xref(self, stream):
+        """
+        Find xref in stream's last 65k characters.
+
+        :param stream: file-like object to scan
+        :type stream: file-like object
+        :return: xref's offset into stream or None if not found
+        :rtype: int or None
+        """
+        stream_length = stream.seek(0, 2)
+        stream.seek(max(-65535, stream_length * -1), 2)
+        last_65k_bytes = stream.read(65535)
+        startxref = last_65k_bytes.rfind(b"startxref")
+        if startxref == -1:
+            startxref = None
+        xref = last_65k_bytes.rfind(b"xref", 0, startxref)
+        if xref > 0:
+            return xref
+        return None
+
+    def build_xref_index(self, stream):
+        """
+        Scan stream and build self.xref without using xref table.
+
+        Use if startxref does not point to xref then it's either missing or all xref indexes are invalid.
+        This is a last-ditch usecase only as it requires parsing entire file contents.
+
+        :param stream: byte stream to scan
+        :type stream: file-like object
+        :return: dict with [generation][object_index] = object_byte_offset mapping and ["trailer"] byte offset
+        :rtype: dict
+        """
+        byte_offset = 0
+        object_offset = 0
+        generation = 0  # generation information is lost if xref table is not used, might have to look into this
+        xref = {}
+        re_object_stream = re.compile(b'(\d+)\s(\d+)\sobj[\r\n]')
+        re_trailer_stream = re.compile(b'trailer[\r\n]')
+
+        prev_offset = stream.tell()
+        stream.seek(0)
+        data = stream.readlines()
+        for line in data:
+            re_object_stream_match = re_object_stream.match(line)
+            if re_object_stream_match:
+                object_index, _ = re_object_stream_match.groups()
+                xref[int(object_index)] = byte_offset
+                warnings.warn(f"Found object at index {object_offset}: {re_object_stream_match.groups()}")
+                object_offset += 1
+            elif re_trailer_stream.match(line):
+                break
+            byte_offset += len(line)
+
+        stream.seek(prev_offset)
+        if xref:
+            return {generation: xref}
+        return {}
 
     def _zeroXref(self, generation):
         self.xref[generation] = dict(

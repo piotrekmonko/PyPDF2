@@ -606,11 +606,16 @@ class DictionaryObject(dict, PdfObject):
             length = data["/Length"]
             if debug:
                 print(data)
+            # if length is referenced through indirect object - resolve the object
             if isinstance(length, IndirectObject):
                 t = stream.tell()
                 length = pdf.getObject(length)
                 stream.seek(t, 0)
-            data["__streamdata__"] = stream.read(length)
+            # if length is invalid - detect based on stream tags
+            if length <= 0:
+                data["__streamdata__"] = utils.readUntilRegex(stream, re.compile(b'endstream[\r\n]+'))
+            else:
+                data["__streamdata__"] = stream.read(length)
             if debug:
                 print("here")
             # if debug: print(binascii.hexlify(data["__streamdata__"]))
